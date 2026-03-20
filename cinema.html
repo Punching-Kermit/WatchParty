@@ -2,128 +2,94 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Master Cinema Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync Cinema Pro</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #0a0a0a; color: white; text-align: center; padding: 15px; margin: 0; }
-        .panel { background: #1a1a1a; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; }
-        #my-id { color: #70a1ff; font-weight: bold; background: #000; padding: 8px; border-radius: 8px; display: block; margin: 10px auto; width: fit-content; font-size: 0.7rem; border: 1px solid #333; }
-        input { width: 90%; padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid #444; background: #222; color: white; font-size: 0.9rem; }
-        button { width: 100%; padding: 15px; margin: 5px 0; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; font-size: 1rem; }
-        .btn-connect { background: #70a1ff; color: white; }
-        .btn-load { background: #2ed573; color: white; }
-        .btn-sub { background: #eccc68; color: #333; }
-        video { width: 100%; border-radius: 10px; background: #000; margin-top: 15px; border: 1px solid #333; }
-        #status { color: #ffa502; font-size: 0.8rem; margin-top: 5px; font-weight: bold; }
+        body { font-family: sans-serif; background: #0f0f0f; color: #e0e0e0; text-align: center; padding: 20px; }
+        .box { background: #1a1a1a; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; }
+        input { width: 90%; padding: 12px; margin: 5px 0; border-radius: 8px; border: 1px solid #444; background: #222; color: white; }
+        button { width: 100%; padding: 15px; margin: 10px 0; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-blue { background: #4a90e2; color: white; }
+        .btn-green { background: #2ecc71; color: white; }
+        video { width: 100%; border-radius: 10px; background: #000; margin-top: 10px; }
+        #status { font-size: 0.8rem; color: #f1c40f; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <div class="panel">
-        <span id="my-id">INITIALIZING...</span>
+
+    <div class="box">
+        <div id="my-id" style="font-size: 0.7rem; color: #888; margin-bottom: 10px;">ID: Loading...</div>
         <input type="text" id="friend-id" placeholder="Paste Friend's ID here">
-        <button class="btn-connect" onclick="connectToFriend()">Connect / Save Friend</button>
-        
-        <hr style="border: 0.5px solid #333; margin: 15px 0;">
-        
-        <input type="text" id="movie-url" placeholder="Paste Movie .mp4 Link">
-        <input type="text" id="sub-url" placeholder="Paste Subtitle .vtt Link (Optional)">
-        <button class="btn-load" onclick="syncAll()">Sync Movie & Subs</button>
-        <p id="status">Waiting...</p>
+        <button class="btn-blue" onclick="connectToFriend()">Connect & Save Partner</button>
+        <hr style="border: 0.5px solid #333;">
+        <input type="text" id="movie-url" placeholder="Paste Movie (.mp4) Link">
+        <input type="text" id="sub-url" placeholder="Paste Subtitle (.vtt) Link">
+        <button class="btn-green" onclick="syncAll()">Sync Movie & Subs</button>
+        <div id="status">Ready</div>
     </div>
-    <video id="main-video" controls playsinline></video>
+
+    <video id="v-player" controls playsinline></video>
 
     <script>
-        const video = document.getElementById('main-video');
-        const status = document.getElementById('status');
-        const friendInput = document.getElementById('friend-id');
+        const v = document.getElementById('v-player');
+        const s = document.getElementById('status');
+        const fInput = document.getElementById('friend-id');
 
-        // 1. LOAD SAVED ID ON START
+        // Load saved ID on refresh
         window.onload = () => {
-            const savedID = localStorage.getItem('savedFriendID');
-            if(savedID) {
-                friendInput.value = savedID;
-                status.innerText = "Saved ID loaded. Click Connect.";
-            }
+            const lastID = localStorage.getItem('partnerID');
+            if(lastID) { fInput.value = lastID; s.innerText = "Partner ID loaded. Tap Connect."; }
         };
 
-        const peer = new Peer({
-            host: '0.peerjs.com', port: 443, secure: true,
-            config: { 'iceServers': [{ url: 'stun:stun.l.google.com:19302' }] }
-        });
-
+        const peer = new Peer({ host: '0.peerjs.com', port: 443, secure: true });
         let conn;
 
-        peer.on('open', id => {
-            document.getElementById('my-id').innerText = "YOUR ID: " + id;
-        });
+        peer.on('open', id => document.getElementById('my-id').innerText = "YOUR ID: " + id);
 
-        // 2. AUTO-RECEIVE CONNECTION
         peer.on('connection', c => {
             conn = c;
-            status.innerText = "Friend Connected!";
-            setupConn();
+            s.innerText = "Friend is here!";
+            listen();
         });
 
         function connectToFriend() {
-            const fID = friendInput.value.trim();
-            if(!fID) return alert("Enter ID!");
-            
-            // SAVE TO PHONE MEMORY
-            localStorage.setItem('savedFriendID', fID);
-            
-            status.innerText = "Connecting...";
-            conn = peer.connect(fID, { reliable: true });
-            conn.on('open', () => {
-                status.innerText = "Connected & Saved!";
-                setupConn();
+            const id = fInput.value.trim();
+            localStorage.setItem('partnerID', id);
+            conn = peer.connect(id);
+            conn.on('open', () => { s.innerText = "Connected!"; listen(); });
+        }
+
+        function listen() {
+            conn.on('data', d => {
+                if (d.type === 'sync') {
+                    v.src = d.m;
+                    if(d.s) addS(d.s);
+                    v.load();
+                } else if (d.type === 'p') { v.currentTime = d.t; v.play(); }
+                else if (d.type === 's') { v.pause(); }
             });
         }
 
-        function setupConn() {
-            conn.on('data', data => {
-                if (data.type === 'sync') {
-                    video.src = data.url;
-                    if(data.subUrl) addSubs(data.subUrl);
-                    video.load();
-                } else if (data.type === 'play') {
-                    video.currentTime = data.time;
-                    video.play();
-                } else if (data.type === 'pause') {
-                    video.pause();
-                }
-            });
-        }
-
-        function addSubs(url) {
-            // Remove old subs
-            const oldTracks = video.querySelectorAll('track');
-            oldTracks.forEach(t => t.remove());
-            
-            const track = document.createElement('track');
-            track.kind = 'subtitles';
-            track.label = 'English';
-            track.srclang = 'en';
-            track.src = url;
-            track.default = true;
-            video.appendChild(track);
+        function addS(url) {
+            const old = v.querySelectorAll('track');
+            old.forEach(t => t.remove());
+            const t = document.createElement('track');
+            t.kind = 'subtitles'; t.src = url; t.srclang = 'en'; t.label = 'English'; t.default = true;
+            v.appendChild(t);
         }
 
         function syncAll() {
-            const mUrl = document.getElementById('movie-url').value;
-            const sUrl = document.getElementById('sub-url').value;
-            
-            video.src = mUrl;
-            if(sUrl) addSubs(sUrl);
-            video.load();
-
-            if (conn && conn.open) {
-                conn.send({ type: 'sync', url: mUrl, subUrl: sUrl });
-            }
+            const m = document.getElementById('movie-url').value;
+            const sub = document.getElementById('sub-url').value;
+            v.src = m;
+            if(sub) addS(sub);
+            v.load();
+            if(conn && conn.open) conn.send({ type: 'sync', m: m, s: sub });
         }
 
-        video.onplay = () => { if (conn && conn.open) conn.send({ type: 'play', time: video.currentTime }); };
-        video.onpause = () => { if (conn && conn.open) conn.send({ type: 'pause' }); };
+        v.onplay = () => { if(conn && conn.open) conn.send({ type: 'p', t: v.currentTime }); };
+        v.onpause = () => { if(conn && conn.open) conn.send({ type: 's' }); };
     </script>
 </body>
 </html>
