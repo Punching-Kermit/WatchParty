@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Private Cinema</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .video-container { width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: 10px; }
+        video { width: 100%; border-radius: 12px; background: #000; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        .controls { background: #1e1e1e; padding: 20px; border-radius: 15px; width: 100%; max-width: 500px; margin-bottom: 20px; }
+        input { width: 70%; padding: 12px; border-radius: 8px; border: none; margin-bottom: 10px; }
+        button { padding: 12px 20px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-share { background: #ff4757; color: white; width: 100%; margin-top: 10px; }
+        .btn-connect { background: #2ed573; color: white; }
+        .btn-mute { background: #ffa502; color: white; margin-top: 10px; }
+        #my-id { font-weight: bold; color: #70a1ff; }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <h3>Cinema Control Panel</h3>
+        <p>Your ID: <span id="my-id">Waiting...</span></p>
+        <input type="text" id="friend-id" placeholder="Paste Friend's ID">
+        <button class="btn-connect" onclick="connectToFriend()">Connect</button>
+        
+        <button class="btn-share" onclick="startMovieShare()">1. Share Movie (Brave Tab)</button>
+        <button class="btn-mute" id="mute-btn" onclick="toggleMute()">Mute My Mic</button>
+    </div>
+
+    <div class="video-container">
+        <video id="movie-video" autoplay playsinline muted></video>
+        <video id="remote-video" autoplay playsinline></video>
+    </div>
+
+    <script>
+        const peer = new Peer();
+        let myStream;
+        let isMuted = false;
+
+        // Get your unique ID
+        peer.on('open', id => document.getElementById('my-id').innerText = id);
+
+        // Receive call from friend
+        peer.on('call', call => {
+            call.answer(myStream);
+            call.on('stream', remoteStream => {
+                document.getElementById('remote-video').srcObject = remoteStream;
+            });
+        });
+
+        async function startMovieShare() {
+            try {
+                // IMPORTANT: Use Brave "Desktop Site" for this to work on Android
+                const movieStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: true
+                });
+                document.getElementById('movie-video').srcObject = movieStream;
+                myStream = movieStream;
+            } catch (err) {
+                alert("Error: Please enable 'Desktop Site' in Brave.");
+            }
+        }
+
+        async function connectToFriend() {
+            const fID = document.getElementById('friend-id').value;
+            // Ask for camera permission for the VC part
+            const camStream = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
+            
+            // If you are already sharing a movie, we merge them or send movie
+            const call = peer.call(fID, myStream || camStream);
+            
+            call.on('stream', remoteStream => {
+                document.getElementById('remote-video').srcObject = remoteStream;
+            });
+        }
+
+        function toggleMute() {
+            if (myStream) {
+                isMuted = !isMuted;
+                myStream.getAudioTracks()[0].enabled = !isMuted;
+                document.getElementById('mute-btn').innerText = isMuted ? "Unmute Mic" : "Mute My Mic";
+                document.getElementById('mute-btn').style.background = isMuted ? "#ff6348" : "#ffa502";
+            }
+        }
+    </script>
+</body>
+</html>
