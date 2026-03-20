@@ -70,32 +70,24 @@
         function initConnection() {
             conn.on('data', data => {
                 if (data.type === 'load') {
-                    forceLoadVideo(data.url, data.sub);
+                    v.src = data.url;
+                    if(data.sub) applySubs(data.sub);
+                    v.load();
                 } else if (data.type === 'play') {
                     v.currentTime = data.time;
-                    v.play().catch(e => console.log("Autoplay blocked"));
+                    v.play().catch(() => {}); 
                 } else if (data.type === 'pause') {
                     v.pause();
                 }
             });
         }
 
-        function forceLoadVideo(m, s) {
-            v.pause();
-            v.removeAttribute('src'); // Clear previous
-            v.load();
-            
-            // Set new source
-            v.src = m;
-            if(s) {
-                const old = v.querySelectorAll('track');
-                old.forEach(t => t.remove());
-                const t = document.createElement('track');
-                t.src = s; t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
-                v.appendChild(t);
-            }
-            v.load();
-            status.innerText = "Video Loaded!";
+        function applySubs(url) {
+            const old = v.querySelectorAll('track');
+            old.forEach(t => t.remove());
+            const t = document.createElement('track');
+            t.src = url; t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
+            v.appendChild(t);
         }
 
         function syncEverything() {
@@ -103,7 +95,9 @@
             const s = document.getElementById('sub-url').value.trim();
             if(!m) return alert("Paste movie link!");
 
-            forceLoadVideo(m, s);
+            v.src = m;
+            if(s) applySubs(s);
+            v.load();
             
             if(conn && conn.open) {
                 conn.send({ type: 'load', url: m, sub: s });
