@@ -1,71 +1,102 @@
-const video = document.getElementById('main-video');
-const status = document.getElementById('status');
-const friendInput = document.getElementById('friend-id');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cinema Sync Pro</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #000; color: #fff; text-align: center; margin: 0; padding: 10px; }
+        .controls { background: #111; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 10px; }
+        input { width: 80%; padding: 10px; margin: 5px; border-radius: 5px; border: 1px solid #444; background: #222; color: #fff; }
+        button { padding: 10px 20px; border-radius: 5px; border: none; background: #007bff; color: #fff; font-weight: bold; }
+        video { width: 100%; max-height: 70vh; margin-top: 10px; border-radius: 5px; box-shadow: 0 0 20px rgba(0,123,255,0.2); }
+        #status { font-size: 0.8rem; color: #888; margin: 10px; }
+        ::cue { background: rgba(0,0,0,0.8); color: #fff; font-size: 1.1rem; }
+    </style>
+</head>
+<body>
 
-window.onload = () => {
-    const savedID = localStorage.getItem('watchPartyFriendID');
-    if(savedID) { friendInput.value = savedID; status.innerText = "Saved ID loaded."; }
-};
+    <div class="controls" id="host-panel">
+        <div id="my-id" style="font-size: 0.7rem;">Initializing ID...</div>
+        <input type="text" id="partner-id" placeholder="Paste Her ID Here">
+        <button onclick="connect()">1. Connect to Her</button>
+        <hr style="border: 0.1px solid #333; margin: 10px;">
+        <input type="text" id="movie-url" placeholder="Movie MP4/MKV Link">
+        <input type="text" id="sub-url" placeholder="Subtitle VTT Link">
+        <button onclick="syncAll()" style="background: #28a745;">2. Start Movie for Both</button>
+    </div>
 
-const peer = new Peer({ host: '0.peerjs.com', port: 443, secure: true });
-let conn;
+    <div id="status">Waiting for connection...</div>
+    <video id="v" controls playsinline crossorigin="anonymous"></video>
 
-peer.on('open', id => { document.getElementById('my-id').innerText = "YOUR ID: " + id; });
-peer.on('connection', c => { conn = c; status.innerText = "Friend Joined!"; setupConn(); });
+    <script>
+        const v = document.getElementById('v');
+        const status = document.getElementById('status');
+        const peer = new Peer({ host: '0.peerjs.com', port: 443, secure: true });
+        let conn;
 
-function connectToFriend() {
-    const fID = friendInput.value.trim();
-    localStorage.setItem('watchPartyFriendID', fID);
-    conn = peer.connect(fID);
-    conn.on('open', () => { status.innerText = "Connected!"; setupConn(); });
-}
+        // Auto-load her ID if you saved it before
+        window.onload = () => {
+            const saved = localStorage.getItem('partnerID');
+            if(saved) document.getElementById('partner-id').value = saved;
+        };
 
-function setupConn() {
-    conn.on('data', async (data) => {
-        if (data.type === 'sync') {
-            video.src = data.url;
-            if (data.subContent) {
-                const blob = new Blob([data.subContent], { type: 'text/vtt' });
-                applySubtitles(URL.createObjectURL(blob));
-            }
-            video.load();
-        } else if (data.type === 'play') { video.currentTime = data.time; video.play(); }
-        else if (data.type === 'pause') { video.pause(); }
-    });
-}
+        peer.on('open', id => { document.getElementById('my-id').innerText = "YOUR ID: " + id; });
 
-function applySubtitles(url) {
-    const old = video.querySelectorAll('track');
-    old.forEach(t => t.remove());
-    const track = document.createElement('track');
-    Object.assign(track, { kind: 'subtitles', label: 'English', srclang: 'en', src: url, default: true });
-    video.appendChild(track);
-}
+        // When she connects to you, or you to her
+        peer.on('connection', c => {
+            conn = c;
+            status.innerText = "❤️ Connected! You are now in sync.";
+            setupReceiver();
+        });
 
-async function syncAll() {
-    const mUrl = document.getElementById('movie-url').value;
-    const sUrl = document.getElementById('sub-url').value;
-    let subContent = "";
+        function connect() {
+            const id = document.getElementById('partner-id').value;
+            localStorage.setItem('partnerID', id);
+            conn = peer.connect(id);
+            conn.on('open', () => {
+                status.innerText = "❤️ Connected! Ready to watch.";
+                setupReceiver();
+            });
+        }
 
-    // This part "grabs" the text from the link so we don't rely on the link later
-    if (sUrl) {
-        try {
-            const response = await fetch(sUrl);
-            subContent = await response.text();
-        } catch (e) { console.log("Subtitle fetch failed, using link only."); }
-    }
+        function setupReceiver() {
+            conn.on('data', data => {
+                if (data.type === 'load') {
+                    v.src = data.url;
+                    if(data.sub) loadSubs(data.sub);
+                    v.load();
+                } else if (data.type === 'play') {
+                    v.currentTime = data.time;
+                    v.play();
+                } else if (data.type === 'pause') {
+                    v.pause();
+                }
+            });
+        }
 
-    video.src = mUrl;
-    if (subContent) {
-        const blob = new Blob([subContent], { type: 'text/vtt' });
-        applySubtitles(URL.createObjectURL(blob));
-    }
-    video.load();
+        function loadSubs(url) {
+            const old = v.querySelectorAll('track');
+            old.forEach(t => t.remove());
+            const t = document.createElement('track');
+            // Using a CORS Proxy to make sure the subtitle link isn't blocked on her iPhone
+            t.src = "https://cors-anywhere.herokuapp.com/" + url; 
+            t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
+            v.appendChild(t);
+        }
 
-    if (conn && conn.open) {
-        conn.send({ type: 'sync', url: mUrl, subContent: subContent });
-    }
-}
+        function syncAll() {
+            const mUrl = document.getElementById('movie-url').value;
+            const sUrl = document.getElementById('sub-url').value;
+            v.src = mUrl;
+            if(sUrl) loadSubs(sUrl);
+            v.load();
+            if(conn) conn.send({ type: 'load', url: mUrl, sub: sUrl });
+        }
 
-video.onplay = () => { if (conn && conn.open) conn.send({ type: 'play', time: video.currentTime }); };
-video.onpause = () => { if (conn && conn.open) conn.send({ type: 'pause' }); };
+        v.onplay = () => { if(conn) conn.send({ type: 'play', time: v.currentTime }); };
+        v.onpause = () => { if(conn) conn.send({ type: 'pause' }); };
+    </script>
+</body>
+</html>
