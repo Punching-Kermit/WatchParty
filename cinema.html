@@ -8,18 +8,13 @@
     <style>
         body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 15px; }
         .panel { background: #161616; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        
         .invite-section { background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 20px; }
-        .invite-btn { background: #6c5ce7; color: #fff; border: none; padding: 14px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .invite-btn:active { background: #5b4cc4; }
-
+        .invite-btn { background: #6c5ce7; color: #fff; border: none; padding: 14px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; }
         input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; font-size: 0.9rem; }
         button.main-action { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.3s; }
         .btn-green { background: #2ecc71; color: white; margin-top: 10px; }
-        
         video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; }
         #status { color: #ffa502; font-size: 0.85rem; margin-top: 10px; font-weight: bold; }
-        ::cue { background: rgba(0,0,0,0.8); color: #fff; font-size: 1.1rem; }
     </style>
 </head>
 <body>
@@ -29,9 +24,7 @@
             <button class="invite-btn" id="invite-btn" onclick="shareInvite()">Copy Connection Link</button>
             <div id="status">Ready to Connect</div>
         </div>
-
         <hr style="border: 0.5px solid #333; margin: 25px 0;">
-        
         <input type="text" id="movie-url" placeholder="Direct Movie URL (MP4/MKV)">
         <input type="text" id="sub-url" placeholder="Subtitle URL (VTT)">
         <button class="main-action btn-green" onclick="syncEverything()">Sync & Play for All</button>
@@ -50,10 +43,7 @@
         peer.on('open', id => {
             const urlParams = new URLSearchParams(window.location.search);
             const joinId = urlParams.get('join');
-            if (joinId) {
-                status.innerText = "Attempting to Join Session...";
-                connectToPartner(joinId);
-            }
+            if (joinId) connectToPartner(joinId);
         });
 
         function shareInvite() {
@@ -80,35 +70,40 @@
         function initConnection() {
             conn.on('data', data => {
                 if (data.type === 'load') {
-                    v.src = data.url;
-                    if(data.sub) applySubs(data.sub);
-                    v.load();
+                    forceLoadVideo(data.url, data.sub);
                 } else if (data.type === 'play') {
                     v.currentTime = data.time;
-                    v.play();
+                    v.play().catch(e => console.log("Autoplay blocked"));
                 } else if (data.type === 'pause') {
                     v.pause();
                 }
             });
         }
 
-        function applySubs(url) {
-            const old = v.querySelectorAll('track');
-            old.forEach(t => t.remove());
-            const t = document.createElement('track');
-            t.src = url; t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
-            v.appendChild(t);
+        function forceLoadVideo(m, s) {
+            v.pause();
+            v.removeAttribute('src'); // Clear previous
+            v.load();
+            
+            // Set new source
+            v.src = m;
+            if(s) {
+                const old = v.querySelectorAll('track');
+                old.forEach(t => t.remove());
+                const t = document.createElement('track');
+                t.src = s; t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
+                v.appendChild(t);
+            }
+            v.load();
+            status.innerText = "Video Loaded!";
         }
 
         function syncEverything() {
             const m = document.getElementById('movie-url').value.trim();
             const s = document.getElementById('sub-url').value.trim();
-            
-            if(!m) return alert("Paste movie link first!");
+            if(!m) return alert("Paste movie link!");
 
-            v.src = m;
-            if(s) applySubs(s);
-            v.load();
+            forceLoadVideo(m, s);
             
             if(conn && conn.open) {
                 conn.send({ type: 'load', url: m, sub: s });
