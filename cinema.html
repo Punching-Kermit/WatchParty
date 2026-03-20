@@ -3,40 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Cinema Sync Master</title>
+    <title>Cinema Sync Pro</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 15px; }
         .panel { background: #161616; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         
         /* Invite Section */
-        .invite-section { background: #1a1a1a; padding: 10px; border-radius: 10px; border: 1px dashed #444; margin-bottom: 15px; }
-        .invite-btn { background: #6c5ce7; color: #fff; border: none; padding: 10px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; }
+        .invite-section { background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 20px; }
+        .invite-btn { background: #6c5ce7; color: #fff; border: none; padding: 12px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .invite-btn:active { background: #5b4cc4; }
 
-        /* Input Group */
-        input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; }
+        /* Input Controls */
+        input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; font-size: 0.9rem; }
         button.main-action { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.3s; }
         .btn-green { background: #2ecc71; color: white; margin-top: 10px; }
+        .btn-green:active { background: #27ae60; }
         
-        video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; }
-        #status { color: #ffa502; font-size: 0.85rem; margin-top: 10px; font-weight: bold; }
+        video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; box-shadow: 0 0 20px rgba(108, 92, 231, 0.1); }
+        #status { color: #ffa502; font-size: 0.85rem; margin-top: 10px; font-weight: bold; letter-spacing: 0.5px; }
+        ::cue { background: rgba(0,0,0,0.8); color: #fff; font-size: 1.1rem; }
     </style>
 </head>
 <body>
 
     <div class="panel">
         <div class="invite-section">
-            <p style="font-size: 0.7rem; color: #aaa; margin-top: 0;">Step 1: Send this to her</p>
-            <button class="invite-btn" id="invite-btn" onclick="shareInvite()">Generate Invite Link</button>
+            <button class="invite-btn" id="invite-btn" onclick="shareInvite()">Copy Connection Link</button>
         </div>
 
-        <div id="status">Initializing...</div>
+        <div id="status">Initializing System...</div>
 
-        <hr style="border: 0.5px solid #333; margin: 20px 0;">
+        <hr style="border: 0.5px solid #333; margin: 25px 0;">
         
-        <input type="text" id="movie-url" placeholder="Movie Link (MP4/MKV)">
-        <input type="text" id="sub-url" placeholder="Subtitle Link (VTT)">
-        <button class="main-action btn-green" onclick="syncEverything()">2. Play for Both</button>
+        <input type="text" id="movie-url" placeholder="Direct Movie URL (MP4/MKV)">
+        <input type="text" id="sub-url" placeholder="Subtitle URL (VTT)">
+        <button class="main-action btn-green" onclick="syncEverything()">Sync & Play for All</button>
     </div>
 
     <video id="player" controls playsinline crossorigin="anonymous"></video>
@@ -47,39 +49,35 @@
         const inviteBtn = document.getElementById('invite-btn');
         let conn;
 
-        // PeerJS Setup
         const peer = new Peer({ host: '0.peerjs.com', port: 443, secure: true });
 
         peer.on('open', id => {
-            status.innerText = "Ready to Host";
-            // Check if WE were invited
+            status.innerText = "Ready to Connect";
             const urlParams = new URLSearchParams(window.location.search);
-            const hostId = urlParams.get('join');
-            if (hostId) {
-                status.innerText = "Joining host...";
-                connectToPartner(hostId);
+            const joinId = urlParams.get('join');
+            if (joinId) {
+                status.innerText = "Attempting to Join...";
+                connectToPartner(joinId);
             }
         });
 
-        // Generate a link that automatically connects her to YOU
         function shareInvite() {
             const inviteUrl = window.location.origin + window.location.pathname + "?join=" + peer.id;
             navigator.clipboard.writeText(inviteUrl);
-            inviteBtn.innerText = "Link Copied! Send to her.";
-            setTimeout(() => { inviteBtn.innerText = "Generate Invite Link"; }, 3000);
+            inviteBtn.innerText = "Link Copied to Clipboard";
+            setTimeout(() => { inviteBtn.innerText = "Copy Connection Link"; }, 3000);
         }
 
-        // Handle incoming connection
         peer.on('connection', c => {
             conn = c;
-            status.innerText = "CONNECTED!";
+            status.innerText = "STATUS: CONNECTED";
             initConnection();
         });
 
         function connectToPartner(fID) {
             conn = peer.connect(fID);
             conn.on('open', () => {
-                status.innerText = "CONNECTED!";
+                status.innerText = "STATUS: CONNECTED";
                 initConnection();
             });
         }
@@ -116,7 +114,6 @@
             if(conn) conn.send({ type: 'load', url: m, sub: s });
         }
 
-        // Sync Playback
         v.onplay = () => { if(conn) conn.send({ type: 'play', time: v.currentTime }); };
         v.onpause = () => { if(conn) conn.send({ type: 'pause' }); };
     </script>
