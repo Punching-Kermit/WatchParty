@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Private Cinema</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #0f0f0f; color: #e0e0e0; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .panel { background: #1a1a1a; padding: 20px; border-radius: 15px; width: 100%; max-width: 450px; border: 1px solid #333; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 20px; }
+        h2 { color: #ff4757; margin-top: 0; font-size: 1.2rem; }
+        #my-id { font-family: monospace; color: #70a1ff; word-break: break-all; background: #000; padding: 5px; border-radius: 5px; }
+        input { width: 80%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #444; background: #222; color: white; }
+        button { width: 100%; padding: 12px; margin: 5px 0; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-connect { background: #2ed573; color: white; }
+        .btn-share { background: #ff4757; color: white; }
+        .btn-cam { background: #1e90ff; color: white; }
+        video { width: 100%; max-width: 500px; border-radius: 10px; background: #000; margin-top: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .status { font-size: 0.8rem; color: #888; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <div class="panel">
+        <h2>Cinema Control Panel</h2>
+        <p class="status">Your ID: <span id="my-id">Initializing...</span></p>
+        
+        <input type="text" id="friend-id" placeholder="Paste Friend's ID here">
+        <button class="btn-connect" onclick="connectToFriend()">Connect to Friend</button>
+        
+        <hr style="border: 0.5px solid #333; margin: 15px 0;">
+        
+        <button class="btn-share" onclick="startMovieShare()">1. Start Movie Share</button>
+        <button class="btn-cam" onclick="startCamera()">2. Open My Camera (VC)</button>
+    </div>
+
+    <div id="video-display" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+        <video id="remote-video" autoplay playsinline></video>
+        <video id="local-video" autoplay playsinline muted style="max-width: 200px; border: 2px solid #ff4757;"></video>
+    </div>
+
+    <script>
+        const peer = new Peer();
+        let currentStream;
+
+        // Display Peer ID
+        peer.on('open', id
