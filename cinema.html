@@ -11,7 +11,7 @@
         .invite-section { background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 20px; }
         .invite-btn { background: #6c5ce7; color: #fff; border: none; padding: 14px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; }
         input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; font-size: 0.9rem; }
-        button.main-action { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.3s; }
+        button.main-action { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; font-size: 1rem; cursor: pointer; }
         .btn-green { background: #2ecc71; color: white; margin-top: 10px; }
         video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; }
         #status { color: #ffa502; font-size: 0.85rem; margin-top: 10px; font-weight: bold; }
@@ -41,7 +41,8 @@
 
         peer.on('open', id => {
             const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('join')) connect(urlParams.get('join'));
+            const joinId = urlParams.get('join');
+            if (joinId) connect(joinId);
         });
 
         function shareInvite() {
@@ -52,7 +53,6 @@
         }
 
         peer.on('connection', newConn => { conn = newConn; setupEvents(); });
-
         function connect(id) { conn = peer.connect(id); setupEvents(); }
 
         function setupEvents() {
@@ -66,18 +66,28 @@
             });
         }
 
+        async function applySubs(url) {
+            const tracks = v.querySelectorAll('track');
+            tracks.forEach(t => t.remove());
+            if(!url) return;
+            try {
+                // Use a proxy to bypass Brave/Chrome security blocks
+                const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+                const response = await fetch(proxyUrl);
+                const text = await response.text();
+                const blob = new Blob([text], { type: 'text/vtt' });
+                const t = document.createElement('track');
+                t.src = URL.createObjectURL(blob);
+                t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
+                v.appendChild(t);
+                setTimeout(() => { if(v.textTracks[0]) v.textTracks[0].mode = 'showing'; }, 500);
+            } catch (e) { console.error(e); }
+        }
+
         function loadVideo(m, s) {
             v.pause();
             v.src = m;
-            const tracks = v.querySelectorAll('track');
-            tracks.forEach(t => t.remove());
-            if(s) {
-                const t = document.createElement('track');
-                t.src = s; t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
-                v.appendChild(t);
-                // Force show for mobile
-                setTimeout(() => { if(v.textTracks[0]) v.textTracks[0].mode = 'showing'; }, 500);
-            }
+            applySubs(s);
             v.load();
         }
 
