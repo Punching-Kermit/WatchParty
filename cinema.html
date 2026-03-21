@@ -18,32 +18,70 @@
 </head>
 <body>
     <div class="panel">
-        <button class="btn-purple" onclick="shareInvite()" id="invite-btn">Copy Connection Link</button>
-        <div id="status">System Ready</div>
-        <input type="text" id="movie-url" placeholder="Movie Link">
-        <button class="btn-green" onclick="syncEverything()">Sync & Play for All</button>
+        <button class="btn-purple" onclick="shareInvite()" id="invite-btn">1. GET CONNECTION LINK</button>
+        <div id="status">Initializing System...</div>
+        <input type="text" id="movie-url" placeholder="Paste Movie Link Here">
+        <button class="btn-green" onclick="syncEverything()">2. SYNC & PLAY</button>
     </div>
     <video id="player" controls playsinline crossorigin="anonymous"></video>
 
     <script>
         const v = document.getElementById('player');
         const status = document.getElementById('status');
+        const inviteBtn = document.getElementById('invite-btn');
         let conn;
-        const peer = new Peer();
+
+        // Using Google's STUN servers to pierce through mobile data/firewalls
+        const peer = new Peer({
+            config: {'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]}
+        });
 
         peer.on('open', id => {
+            status.innerText = "READY: TAP THE PURPLE BUTTON";
             const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('join')) connectToPeer(urlParams.get('join'));
+            if (urlParams.get('join')) connectToPartner(urlParams.get('join'));
         });
 
         function shareInvite() {
-            const inviteUrl = window.location.origin + window.location.pathname + "?join=" + peer.id;
-            navigator.clipboard.writeText(inviteUrl);
-            document.getElementById('invite-btn').innerText = "Link Copied!";
+            if (!peer.id) return alert("System still loading, wait 2 seconds.");
+            const url = window.location.origin + window.location.pathname + "?join=" + peer.id;
+            navigator.clipboard.writeText(url);
+            inviteBtn.innerText = "LINK COPIED! SEND TO HER";
         }
 
-        peer.on('connection', newConn => { conn = newConn; setupEvents(); });
-        function connectToPeer(id) { conn = peer.connect(id); setupEvents(); }
+        peer.on('connection', newConn => {
+            conn = newConn;
+            setupEvents();
+        });
+
+        function connectToPartner(id) {
+            status.innerText = "CONNECTING TO PARTNER...";
+            conn = peer.connect(id);
+            setupEvents();
+        }
 
         function setupEvents() {
-            conn.on('open',
+            conn.on('open', () => {
+                status.innerText = "CONNECTED TO PARTNER";
+                conn.on('data', data => {
+                    if (data.type === 'load') { v.src = data.url; v.load(); }
+                    else if (data.type === 'play') { v.currentTime = data.time; v.play().catch(() => {}); }
+                    else if (data.type === 'pause') { v.pause(); }
+                });
+            });
+            conn.on('error', () => { status.innerText = "CONNECTION FAILED. RETRY."; });
+        }
+
+        function syncEverything() {
+            const m = document.getElementById('movie-url').value.trim();
+            if(!m) return alert("Paste movie link!");
+            v.src = m;
+            v.load();
+            if (conn && conn.open) conn.send({ type: 'load', url: m });
+        }
+
+        v.onplay = () => { if(conn && conn.open) conn.send({ type: 'play', time: v.currentTime }); };
+        v.onpause = () => { if(conn && conn.open) conn.send({ type: 'pause' }); };
+    </script>
+</body>
+</html>
