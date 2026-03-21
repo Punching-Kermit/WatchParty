@@ -14,10 +14,9 @@
         .btn-green { background: #2ecc71; color: white; }
         .video-container { position: relative; width: 100%; margin-top: 15px; background: #000; border-radius: 12px; overflow: hidden; }
         video { width: 100%; display: block; }
-        #sub-box { position: absolute; bottom: 12%; left: 0; right: 0; text-align: center; z-index: 999; pointer-events: none; }
-        #sub-text { background: rgba(0, 0, 0, 0.75); color: #ffffff; font-size: 1.1rem; padding: 5px 15px; border-radius: 5px; display: inline-block; max-width: 85%; line-height: 1.4; }
         #status { color: #ffa502; font-size: 0.8rem; margin: 10px 0; font-weight: bold; }
         #debug { color: #2ecc71; font-size: 0.7rem; margin-top: 5px; }
+        ::cue { background: rgba(0,0,0,0.8); color: #fff; font-size: 1.1rem; }
     </style>
 </head>
 <body>
@@ -32,14 +31,12 @@
 
     <div class="video-container">
         <video id="player" controls playsinline crossorigin="anonymous"></video>
-        <div id="sub-box"><span id="sub-text"></span></div>
     </div>
 
     <script>
         const v = document.getElementById('player');
-        const subText = document.getElementById('sub-text');
         const debug = document.getElementById('debug');
-        let conn, subtitles = [];
+        let conn;
         const peer = new Peer();
 
         peer.on('open', id => {
@@ -67,66 +64,45 @@
             });
         }
 
-        async function fetchSubtitles(url) {
-            subtitles = [];
+        async function applySubs(url) {
+            // Clear old tracks
+            while (v.firstChild) v.removeChild(v.firstChild);
             if (!url) return;
-            debug.innerText = "Parsing file...";
             
             try {
-                const proxy = 'https://corsproxy.io/?' + encodeURIComponent(url);
+                debug.innerText = "Downloading Subtitles...";
+                const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
                 const response = await fetch(proxy);
                 const text = await response.text();
                 
-                // Better parsing logic for VTT files
-                const blocks = text.split(/\n\s*\n/);
-                blocks.forEach(block => {
-                    const lines = block.split('\n');
-                    let timeMatch = null;
-                    let textLines = [];
+                // Create a "Blob" (Fake local file)
+                const blob = new Blob([text], { type: 'text/vtt' });
+                const blobUrl = URL.createObjectURL(blob);
 
-                    lines.forEach(line => {
-                        if (line.includes('-->')) {
-                            timeMatch = line.split(' --> ');
-                        } else if (timeMatch && line.trim() !== "") {
-                            textLines.push(line.trim());
-                        }
-                    });
+                const t = document.createElement('track');
+                t.src = blobUrl;
+                t.kind = "subtitles";
+                t.srclang = "en";
+                t.label = "English";
+                t.default = true;
+                v.appendChild(t);
+                
+                debug.innerText = "Subtitles Injected Successfully!";
+                
+                // Force activate for mobile
+                v.addEventListener('loadedmetadata', () => {
+                    if(v.textTracks[0]) v.textTracks[0].mode = 'showing';
+                }, { once: true });
 
-                    if (timeMatch && textLines.length > 0) {
-                        subtitles.push({
-                            start: toSec(timeMatch[0]),
-                            end: toSec(timeMatch[1]),
-                            text: textLines.join('<br>')
-                        });
-                    }
-                });
-                debug.innerText = "Subtitles Loaded: " + subtitles.length + " lines";
             } catch (e) {
                 debug.innerText = "Error: " + e.message;
             }
         }
 
-        function toSec(t) {
-            const parts = t.trim().replace(',', '.').split(':');
-            let s = 0;
-            if (parts.length === 3) {
-                s = (parseFloat(parts[0]) * 3600) + (parseFloat(parts[1]) * 60) + parseFloat(parts[2]);
-            } else {
-                s = (parseFloat(parts[0]) * 60) + parseFloat(parts[1]);
-            }
-            return s;
-        }
-
-        v.ontimeupdate = () => {
-            const now = v.currentTime;
-            const match = subtitles.find(s => now >= s.start && now <= s.end);
-            subText.innerHTML = match ? match.text : "";
-        };
-
         function loadVideo(m, s) {
             v.pause();
             v.src = m;
-            fetchSubtitles(s);
+            applySubs(s);
             v.load();
         }
 
