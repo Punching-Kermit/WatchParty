@@ -31,18 +31,12 @@
         const v = document.getElementById('player');
         const status = document.getElementById('status');
         let conn;
-        
-        // Randomize ID slightly to prevent server collisions
         const peer = new Peer();
 
         peer.on('open', id => {
             status.innerText = "Ready to Connect";
             const urlParams = new URLSearchParams(window.location.search);
-            const joinId = urlParams.get('join');
-            if (joinId) {
-                status.innerText = "Connecting to Host...";
-                connectToPeer(joinId);
-            }
+            if (urlParams.get('join')) connectToPeer(urlParams.get('join'));
         });
 
         function shareInvite() {
@@ -51,55 +45,62 @@
             document.getElementById('invite-btn').innerText = "Link Copied!";
         }
 
-        peer.on('connection', newConn => {
-            conn = newConn;
-            handleData();
-        });
-
-        function connectToPeer(id) {
-            conn = peer.connect(id);
-            handleData();
-        }
+        peer.on('connection', newConn => { conn = newConn; handleData(); });
+        function connectToPeer(id) { conn = peer.connect(id); handleData(); }
 
         function handleData() {
             conn.on('open', () => {
                 status.innerText = "STATUS: CONNECTED";
                 conn.on('data', data => {
-                    if (data.type === 'load') {
-                        v.src = data.url;
-                        applySubs(data.sub);
-                        v.load();
-                    } else if (data.type === 'play') {
-                        v.currentTime = data.time;
-                        v.play().catch(() => {});
-                    } else if (data.type === 'pause') {
-                        v.pause();
-                    }
+                    if (data.type === 'load') { loadVideo(data.url, data.sub); }
+                    else if (data.type === 'play') { v.currentTime = data.time; v.play().catch(() => {}); }
+                    else if (data.type === 'pause') { v.pause(); }
                 });
             });
-            conn.on('error', () => { status.innerText = "Connection Error. Refresh."; });
         }
 
-        function applySubs(s) {
+        async function applySubs(url) {
             while (v.firstChild) v.removeChild(v.firstChild);
-            if (!s) return;
-            const t = document.createElement('track');
-            t.src = s; t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
-            v.appendChild(t);
-            // Force activate
-            v.textTracks[0].mode = 'showing';
+            if (!url) return;
+            try {
+                // BYPASS: Use a proxy to fetch the file as text
+                const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+                const response = await fetch(proxyUrl);
+                const text = await response.text();
+                
+                // Convert text to a Local File (Blob)
+                const blob = new Blob([text], { type: 'text/vtt' });
+                const blobUrl = URL.createObjectURL(blob);
+
+                const t = document.createElement('track');
+                t.src = blobUrl;
+                t.kind = "subtitles";
+                t.srclang = "en";
+                t.label = "English";
+                t.default = true;
+                v.appendChild(t);
+                
+                // Force activate the track
+                setTimeout(() => {
+                    if(v.textTracks[0]) v.textTracks[0].mode = 'showing';
+                }, 500);
+            } catch (e) {
+                console.log("Sub Load Failed:", e);
+            }
+        }
+
+        function loadVideo(m, s) {
+            v.pause();
+            v.src = m;
+            applySubs(s);
+            v.load();
         }
 
         function syncEverything() {
             const m = document.getElementById('movie-url').value.trim();
             const s = document.getElementById('sub-url').value.trim();
-            if(!m) return alert("Paste movie link!");
-            v.src = m;
-            applySubs(s);
-            v.load();
-            if (conn && conn.open) {
-                conn.send({ type: 'load', url: m, sub: s });
-            }
+            loadVideo(m, s);
+            if (conn && conn.open) conn.send({ type: 'load', url: m, sub: s });
         }
 
         v.onplay = () => { if(conn && conn.open) conn.send({ type: 'play', time: v.currentTime }); };
