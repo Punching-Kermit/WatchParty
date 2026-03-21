@@ -64,45 +64,30 @@
             });
         }
 
-        async function applySubs(url) {
+        function loadVideo(m, s) {
+            v.pause();
+            v.src = m;
+            
             // Clear old tracks
             while (v.firstChild) v.removeChild(v.firstChild);
-            if (!url) return;
-            
-            try {
-                debug.innerText = "Downloading Subtitles...";
-                const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-                const response = await fetch(proxy);
-                const text = await response.text();
-                
-                // Create a "Blob" (Fake local file)
-                const blob = new Blob([text], { type: 'text/vtt' });
-                const blobUrl = URL.createObjectURL(blob);
 
+            if (s) {
+                // Using a specialized subtitle proxy to bypass CORS
+                const proxyUrl = "https://srt-vtt-proxy.vercel.app/api/proxy?url=" + encodeURIComponent(s);
                 const t = document.createElement('track');
-                t.src = blobUrl;
+                t.src = proxyUrl;
                 t.kind = "subtitles";
                 t.srclang = "en";
                 t.label = "English";
                 t.default = true;
                 v.appendChild(t);
                 
-                debug.innerText = "Subtitles Injected Successfully!";
+                debug.innerText = "Proxy loaded. Check for CC icon.";
                 
-                // Force activate for mobile
                 v.addEventListener('loadedmetadata', () => {
                     if(v.textTracks[0]) v.textTracks[0].mode = 'showing';
                 }, { once: true });
-
-            } catch (e) {
-                debug.innerText = "Error: " + e.message;
             }
-        }
-
-        function loadVideo(m, s) {
-            v.pause();
-            v.src = m;
-            applySubs(s);
             v.load();
         }
 
