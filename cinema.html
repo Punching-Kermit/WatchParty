@@ -9,35 +9,35 @@
         body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 15px; }
         .panel { background: #161616; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; }
         input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; }
-        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        button { width: 100%; padding: 12px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; margin-top: 5px; }
         .btn-purple { background: #6c5ce7; color: white; }
         .btn-green { background: #2ecc71; color: white; }
         
-        .video-container { position: relative; width: 100%; margin-top: 15px; border-radius: 12px; overflow: hidden; border: 1px solid #333; }
-        video { width: 100%; display: block; background: #000; }
+        .video-container { position: relative; width: 100%; margin-top: 15px; background: #000; border-radius: 12px; overflow: hidden; }
+        video { width: 100%; display: block; }
         
-        /* THE CUSTOM SUBTITLE OVERLAY */
-        #custom-subs {
+        /* HARD-CODED OVERLAY */
+        #sub-box {
             position: absolute;
-            bottom: 15%;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 90%;
+            bottom: 10%;
+            left: 0;
+            right: 0;
             text-align: center;
-            color: white;
-            font-size: 1.2rem;
-            font-weight: bold;
-            text-shadow: 2px 2px 4px rgba(0,0,0,1);
-            pointer-events: none; /* Allows you to tap the video through the text */
-            z-index: 100;
+            z-index: 999;
+            pointer-events: none;
         }
-        #custom-subs span {
-            background: rgba(0, 0, 0, 0.7);
-            padding: 2px 10px;
+        #sub-text {
+            background: rgba(0, 0, 0, 0.75);
+            color: #ffffff;
+            font-size: 1.1rem;
+            padding: 4px 12px;
             border-radius: 5px;
             display: inline-block;
+            max-width: 80%;
+            line-height: 1.4;
         }
-        #status { color: #ffa502; font-size: 0.85rem; margin: 10px 0; font-weight: bold; }
+        #status { color: #ffa502; font-size: 0.8rem; margin: 10px 0; font-weight: bold; }
+        #debug { color: #ff4757; font-size: 0.7rem; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -47,18 +47,19 @@
         <input type="text" id="movie-url" placeholder="Movie Link">
         <input type="text" id="sub-url" placeholder="Subtitle Link (.vtt)">
         <button class="btn-green" onclick="syncEverything()">Sync & Play for All</button>
+        <div id="debug"></div>
     </div>
 
     <div class="video-container">
         <video id="player" controls playsinline crossorigin="anonymous"></video>
-        <div id="custom-subs"><span>Waiting for subtitles...</span></div>
+        <div id="sub-box"><span id="sub-text"></span></div>
     </div>
 
     <script>
         const v = document.getElementById('player');
-        const status = document.getElementById('status');
-        const subOverlay = document.getElementById('custom-subs');
-        let conn, parsedSubs = [];
+        const subText = document.getElementById('sub-text');
+        const debug = document.getElementById('debug');
+        let conn, subtitles = [];
         const peer = new Peer();
 
         peer.on('open', id => {
@@ -77,7 +78,7 @@
 
         function setupEvents() {
             conn.on('open', () => {
-                status.innerText = "STATUS: CONNECTED";
+                document.getElementById('status').innerText = "STATUS: CONNECTED";
                 conn.on('data', data => {
                     if (data.type === 'load') { loadVideo(data.url, data.sub); }
                     else if (data.type === 'play') { v.currentTime = data.time; v.play().catch(() => {}); }
@@ -86,65 +87,61 @@
             });
         }
 
-        async function fetchAndParseSubs(url) {
-            parsedSubs = [];
-            if (!url) { subOverlay.style.display = 'none'; return; }
+        async function fetchSubtitles(url) {
+            subtitles = [];
+            if (!url) return;
+            debug.innerText = "Fetching subtitles...";
+            
             try {
-                const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-                const response = await fetch(proxyUrl);
+                // Using a different proxy for better compatibility
+                const proxy = 'https://corsproxy.io/?' + encodeURIComponent(url);
+                const response = await fetch(proxy);
                 const text = await response.text();
                 
-                const lines = text.split('\n');
-                let currentSub = {};
+                const lines = text.split(/\r?\n/);
+                let current = null;
 
                 lines.forEach(line => {
                     if (line.includes('-->')) {
-                        const parts = line.split(' --> ');
-                        currentSub.start = timeToSeconds(parts[0]);
-                        currentSub.end = timeToSeconds(parts[1]);
-                    } else if (line.trim() !== '' && !line.startsWith('WEBVTT') && currentSub.start !== undefined) {
-                        currentSub.text = line.trim();
-                        parsedSubs.push({...currentSub});
-                        currentSub = {};
+                        const times = line.split(' --> ');
+                        current = { start: toSec(times[0]), end: toSec(times[1]), text: "" };
+                    } else if (current && line.trim() !== "" && !line.includes('WEBVTT')) {
+                        current.text += line.trim() + " ";
+                        if (!subtitles.find(s => s.start === current.start)) {
+                            subtitles.push(current);
+                        }
                     }
                 });
-                subOverlay.style.display = 'block';
-            } catch (e) { console.log("Sub Fetch Error", e); }
-        }
-
-        function timeToSeconds(t) {
-            const parts = t.trim().split(':');
-            let secs = 0;
-            if (parts.length === 3) {
-                secs = parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2].replace(',', '.'));
-            } else {
-                secs = parseFloat(parts[0]) * 60 + parseFloat(parts[1].replace(',', '.'));
+                debug.innerText = "Subtitles Loaded: " + subtitles.length + " lines";
+            } catch (e) {
+                debug.innerText = "Error: " + e.message;
             }
-            return secs;
         }
 
-        // UPDATE SUBTITLES EVERY TIME VIDEO PLAYS
+        function toSec(t) {
+            const p = t.trim().replace(',', '.').split(':');
+            let s = 0;
+            if (p.length === 3) s = (+p[0]) * 3600 + (+p[1]) * 60 + (+p[2]);
+            else s = (+p[0]) * 60 + (+p[1]);
+            return s;
+        }
+
         v.ontimeupdate = () => {
             const now = v.currentTime;
-            const active = parsedSubs.find(s => now >= s.start && now <= s.end);
-            if (active) {
-                subOverlay.innerHTML = `<span>${active.text}</span>`;
-            } else {
-                subOverlay.innerHTML = "";
-            }
+            const match = subtitles.find(s => now >= s.start && now <= s.end);
+            subText.innerHTML = match ? match.text : "";
         };
 
         function loadVideo(m, s) {
             v.pause();
             v.src = m;
-            fetchAndParseSubs(s);
+            fetchSubtitles(s);
             v.load();
         }
 
         function syncEverything() {
             const m = document.getElementById('movie-url').value.trim();
             const s = document.getElementById('sub-url').value.trim();
-            if(!m) return alert("Paste movie link!");
             loadVideo(m, s);
             if (conn && conn.open) conn.send({ type: 'load', url: m, sub: s });
         }
