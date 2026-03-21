@@ -12,32 +12,12 @@
         button { width: 100%; padding: 12px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; margin-top: 5px; }
         .btn-purple { background: #6c5ce7; color: white; }
         .btn-green { background: #2ecc71; color: white; }
-        
         .video-container { position: relative; width: 100%; margin-top: 15px; background: #000; border-radius: 12px; overflow: hidden; }
         video { width: 100%; display: block; }
-        
-        /* HARD-CODED OVERLAY */
-        #sub-box {
-            position: absolute;
-            bottom: 10%;
-            left: 0;
-            right: 0;
-            text-align: center;
-            z-index: 999;
-            pointer-events: none;
-        }
-        #sub-text {
-            background: rgba(0, 0, 0, 0.75);
-            color: #ffffff;
-            font-size: 1.1rem;
-            padding: 4px 12px;
-            border-radius: 5px;
-            display: inline-block;
-            max-width: 80%;
-            line-height: 1.4;
-        }
+        #sub-box { position: absolute; bottom: 12%; left: 0; right: 0; text-align: center; z-index: 999; pointer-events: none; }
+        #sub-text { background: rgba(0, 0, 0, 0.75); color: #ffffff; font-size: 1.1rem; padding: 5px 15px; border-radius: 5px; display: inline-block; max-width: 85%; line-height: 1.4; }
         #status { color: #ffa502; font-size: 0.8rem; margin: 10px 0; font-weight: bold; }
-        #debug { color: #ff4757; font-size: 0.7rem; margin-top: 5px; }
+        #debug { color: #2ecc71; font-size: 0.7rem; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -47,7 +27,7 @@
         <input type="text" id="movie-url" placeholder="Movie Link">
         <input type="text" id="sub-url" placeholder="Subtitle Link (.vtt)">
         <button class="btn-green" onclick="syncEverything()">Sync & Play for All</button>
-        <div id="debug"></div>
+        <div id="debug">Ready for links</div>
     </div>
 
     <div class="video-container">
@@ -90,26 +70,34 @@
         async function fetchSubtitles(url) {
             subtitles = [];
             if (!url) return;
-            debug.innerText = "Fetching subtitles...";
+            debug.innerText = "Parsing file...";
             
             try {
-                // Using a different proxy for better compatibility
                 const proxy = 'https://corsproxy.io/?' + encodeURIComponent(url);
                 const response = await fetch(proxy);
                 const text = await response.text();
                 
-                const lines = text.split(/\r?\n/);
-                let current = null;
+                // Better parsing logic for VTT files
+                const blocks = text.split(/\n\s*\n/);
+                blocks.forEach(block => {
+                    const lines = block.split('\n');
+                    let timeMatch = null;
+                    let textLines = [];
 
-                lines.forEach(line => {
-                    if (line.includes('-->')) {
-                        const times = line.split(' --> ');
-                        current = { start: toSec(times[0]), end: toSec(times[1]), text: "" };
-                    } else if (current && line.trim() !== "" && !line.includes('WEBVTT')) {
-                        current.text += line.trim() + " ";
-                        if (!subtitles.find(s => s.start === current.start)) {
-                            subtitles.push(current);
+                    lines.forEach(line => {
+                        if (line.includes('-->')) {
+                            timeMatch = line.split(' --> ');
+                        } else if (timeMatch && line.trim() !== "") {
+                            textLines.push(line.trim());
                         }
+                    });
+
+                    if (timeMatch && textLines.length > 0) {
+                        subtitles.push({
+                            start: toSec(timeMatch[0]),
+                            end: toSec(timeMatch[1]),
+                            text: textLines.join('<br>')
+                        });
                     }
                 });
                 debug.innerText = "Subtitles Loaded: " + subtitles.length + " lines";
@@ -119,10 +107,13 @@
         }
 
         function toSec(t) {
-            const p = t.trim().replace(',', '.').split(':');
+            const parts = t.trim().replace(',', '.').split(':');
             let s = 0;
-            if (p.length === 3) s = (+p[0]) * 3600 + (+p[1]) * 60 + (+p[2]);
-            else s = (+p[0]) * 60 + (+p[1]);
+            if (parts.length === 3) {
+                s = (parseFloat(parts[0]) * 3600) + (parseFloat(parts[1]) * 60) + parseFloat(parts[2]);
+            } else {
+                s = (parseFloat(parts[0]) * 60) + parseFloat(parts[1]);
+            }
             return s;
         }
 
