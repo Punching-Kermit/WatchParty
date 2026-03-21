@@ -8,48 +8,40 @@
     <style>
         body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 15px; }
         .panel { background: #161616; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .invite-section { background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 20px; }
-        .invite-btn { background: #6c5ce7; color: #fff; border: none; padding: 14px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; }
-        input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; font-size: 0.9rem; }
-        button.main-action { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; font-size: 1rem; cursor: pointer; }
-        .btn-green { background: #2ecc71; color: white; margin-top: 10px; }
+        input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; }
+        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn-purple { background: #6c5ce7; color: white; }
+        .btn-green { background: #2ecc71; color: white; }
         video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; }
-        #status { color: #ffa502; font-size: 0.85rem; margin-top: 10px; font-weight: bold; }
+        #status { color: #ffa502; font-size: 0.85rem; margin: 10px 0; font-weight: bold; }
         ::cue { background: rgba(0,0,0,0.8); color: #fff; font-size: 1.1rem; }
     </style>
 </head>
 <body>
     <div class="panel">
-        <div class="invite-section">
-            <button class="invite-btn" id="invite-btn" onclick="shareInvite()">Copy Connection Link</button>
-            <div id="status">Ready to Connect</div>
-        </div>
-        <hr style="border: 0.5px solid #333; margin: 25px 0;">
-        <input type="text" id="movie-url" placeholder="Movie Link (MP4/MKV)">
-        <input type="text" id="sub-url" placeholder="Subtitle Link (VTT)">
-        <button class="main-action btn-green" onclick="syncEverything()">Sync & Play for All</button>
+        <button class="btn-purple" onclick="shareInvite()" id="invite-btn">Copy Connection Link</button>
+        <div id="status">Ready to Connect</div>
+        <input type="text" id="movie-url" placeholder="Movie Link">
+        <input type="text" id="sub-url" placeholder="Subtitle Link (.vtt)">
+        <button class="btn-green" onclick="syncEverything()">Sync & Play for All</button>
     </div>
     <video id="player" controls playsinline crossorigin="anonymous"></video>
 
     <script>
         const v = document.getElementById('player');
         const status = document.getElementById('status');
-        const inviteBtn = document.getElementById('invite-btn');
         let conn;
-
         const peer = new Peer();
 
         peer.on('open', id => {
             const urlParams = new URLSearchParams(window.location.search);
-            const joinId = urlParams.get('join');
-            if (joinId) connect(joinId);
+            if (urlParams.get('join')) connect(urlParams.get('join'));
         });
 
         function shareInvite() {
             const inviteUrl = window.location.origin + window.location.pathname + "?join=" + peer.id;
             navigator.clipboard.writeText(inviteUrl);
-            inviteBtn.innerText = "Link Copied!";
-            setTimeout(() => { inviteBtn.innerText = "Copy Connection Link"; }, 3000);
+            document.getElementById('invite-btn').innerText = "Link Copied!";
         }
 
         peer.on('connection', newConn => { conn = newConn; setupEvents(); });
@@ -66,28 +58,28 @@
             });
         }
 
-        async function applySubs(url) {
-            const tracks = v.querySelectorAll('track');
-            tracks.forEach(t => t.remove());
-            if(!url) return;
-            try {
-                // Use a proxy to bypass Brave/Chrome security blocks
-                const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-                const response = await fetch(proxyUrl);
-                const text = await response.text();
-                const blob = new Blob([text], { type: 'text/vtt' });
-                const t = document.createElement('track');
-                t.src = URL.createObjectURL(blob);
-                t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
-                v.appendChild(t);
-                setTimeout(() => { if(v.textTracks[0]) v.textTracks[0].mode = 'showing'; }, 500);
-            } catch (e) { console.error(e); }
-        }
-
         function loadVideo(m, s) {
             v.pause();
             v.src = m;
-            applySubs(s);
+            // Remove old tracks
+            while (v.firstChild) v.removeChild(v.firstChild);
+            
+            if(s) {
+                const t = document.createElement('track');
+                t.src = s;
+                t.kind = "subtitles";
+                t.srclang = "en";
+                t.label = "English";
+                t.default = true;
+                v.appendChild(t);
+                
+                // CRITICAL: This forces the subtitle track to "Showing" mode
+                v.addEventListener('loadedmetadata', () => {
+                    for (let i = 0; i < v.textTracks.length; i++) {
+                        v.textTracks[i].mode = 'showing';
+                    }
+                }, { once: true });
+            }
             v.load();
         }
 
