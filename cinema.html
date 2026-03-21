@@ -1,50 +1,111 @@
-async function applySubs(url) {
-    // 1. Clear old tracks
-    const oldTracks = v.querySelectorAll('track');
-    oldTracks.forEach(t => t.remove());
-    if (!url) return;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Cinema Sync Pro</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 15px; }
+        .panel { background: #161616; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; }
+        input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; }
+        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn-purple { background: #6c5ce7; color: white; }
+        .btn-green { background: #2ecc71; color: white; }
+        video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; }
+        #status { color: #ffa502; font-size: 0.85rem; margin: 10px 0; font-weight: bold; }
+        video::cue { background: rgba(0,0,0,0.8); color: #ffffff; font-size: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <button class="btn-purple" onclick="shareInvite()" id="invite-btn">Copy Connection Link</button>
+        <div id="status">System Ready</div>
+        <input type="text" id="movie-url" placeholder="Movie Link">
+        <input type="text" id="sub-url" placeholder="Subtitle Link (.vtt)">
+        <button class="btn-green" onclick="syncEverything()">Sync & Play for All</button>
+    </div>
+    <video id="player" controls playsinline crossorigin="anonymous"></video>
 
-    try {
-        // 2. Fetch the text using a proxy to bypass security blocks
-        const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-        const response = await fetch(proxyUrl);
-        const text = await response.text();
-        
-        // 3. Convert text to a "Data URI" (This tricks the browser into thinking it's local)
-        const blob = new Blob([text], { type: 'text/vtt' });
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = function() {
-            const dataUri = reader.result;
-            const t = document.createElement('track');
-            t.src = dataUri;
-            t.kind = "subtitles";
-            t.srclang = "en";
-            t.label = "English";
-            t.default = true;
-            v.appendChild(t);
-            
-            // 4. Force show immediately for mobile
-            setTimeout(() => {
-                if (v.textTracks[0]) v.textTracks[0].mode = 'showing';
-            }, 500);
-        };
-    } catch (e) {
-        console.error("Subtitle injection failed", e);
-    }
-}
+    <script>
+        const v = document.getElementById('player');
+        const status = document.getElementById('status');
+        let conn;
+        const peer = new Peer();
 
-function loadVideo(m, s) {
-    v.pause();
-    v.src = m;
-    applySubs(s); // This calls the new "Force-Feed" logic above
-    v.load();
-}
+        peer.on('open', id => {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('join')) connectToPeer(urlParams.get('join'));
+        });
 
-function syncEverything() {
-    const m = document.getElementById('movie-url').value.trim();
-    const s = document.getElementById('sub-url').value.trim();
-    if(!m) return alert("Paste movie link!");
-    loadVideo(m, s);
-    if (conn && conn.open) conn.send({ type: 'load', url: m, sub: s });
-}
+        function shareInvite() {
+            const inviteUrl = window.location.origin + window.location.pathname + "?join=" + peer.id;
+            navigator.clipboard.writeText(inviteUrl);
+            document.getElementById('invite-btn').innerText = "Link Copied!";
+        }
+
+        peer.on('connection', newConn => { conn = newConn; setupEvents(); });
+        function connectToPeer(id) { conn = peer.connect(id); setupEvents(); }
+
+        function setupEvents() {
+            conn.on('open', () => {
+                status.innerText = "STATUS: CONNECTED";
+                conn.on('data', data => {
+                    if (data.type === 'load') { loadVideo(data.url, data.sub); }
+                    else if (data.type === 'play') { v.currentTime = data.time; v.play().catch(() => {}); }
+                    else if (data.type === 'pause') { v.pause(); }
+                });
+            });
+        }
+
+        async function applySubs(url) {
+            const oldTracks = v.querySelectorAll('track');
+            oldTracks.forEach(t => t.remove());
+
+            if (!url) return;
+            try {
+                const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+                const response = await fetch(proxyUrl);
+                const text = await response.text();
+                
+                // Tricking the browser by turning the text into a Data URI
+                const blob = new Blob([text], { type: 'text/vtt' });
+                const reader = new FileReader();
+                reader.readAsDataURL(blob);
+                reader.onloadend = function() {
+                    const t = document.createElement('track');
+                    t.src = reader.result;
+                    t.kind = "subtitles";
+                    t.srclang = "en";
+                    t.label = "English";
+                    t.default = true;
+                    v.appendChild(t);
+                    
+                    // Force the track to 'showing' mode
+                    setTimeout(() => {
+                        if (v.textTracks[0]) v.textTracks[0].mode = 'showing';
+                    }, 1000);
+                };
+            } catch (e) { console.log("Sub Error:", e); }
+        }
+
+        function loadVideo(m, s) {
+            v.pause();
+            v.src = m;
+            applySubs(s);
+            v.load();
+        }
+
+        function syncEverything() {
+            const m = document.getElementById('movie-url').value.trim();
+            const s = document.getElementById('sub-url').value.trim();
+            if(!m) return alert("Paste movie link!");
+            loadVideo(m, s);
+            if (conn && conn.open) conn.send({ type: 'load', url: m, sub: s });
+        }
+
+        v.onplay = () => { if(conn && conn.open) conn.send({ type: 'play', time: v.currentTime }); };
+        v.onpause = () => { if(conn && conn.open) conn.send({ type: 'pause' }); };
+    </script>
+</body>
+</html>
