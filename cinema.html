@@ -8,13 +8,37 @@
     <style>
         body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 15px; }
         .panel { background: #161616; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; }
-        input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; }
-        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        input { width: 100%; padding: 12px; box-sizing: border-box; border-radius: 8px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; }
+        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin-top: 5px; }
         .btn-purple { background: #6c5ce7; color: white; }
         .btn-green { background: #2ecc71; color: white; }
-        video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; }
-        #status { color: #ffa502; font-size: 0.85rem; margin: 10px 0; font-weight: bold; }
-        video::cue { background: rgba(0,0,0,0.8); color: #ffffff; font-size: 1rem; }
+        
+        /* The Container */
+        .vid-wrapper { position: relative; width: 100%; margin-top: 15px; background: #000; border-radius: 12px; overflow: hidden; }
+        video { width: 100%; display: block; }
+
+        /* THE MANUAL TEXT LAYER */
+        #sub-overlay {
+            position: absolute;
+            bottom: 15%;
+            left: 0;
+            right: 0;
+            text-align: center;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        #sub-text {
+            background: rgba(0, 0, 0, 0.8);
+            color: #ffffff;
+            font-size: 1.2rem;
+            padding: 5px 15px;
+            border-radius: 5px;
+            display: inline-block;
+            max-width: 80%;
+            line-height: 1.4;
+            text-shadow: 2px 2px 2px #000;
+        }
+        #status { color: #ffa502; font-size: 0.8rem; margin: 10px 0; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -25,17 +49,21 @@
         <input type="text" id="sub-url" placeholder="Subtitle Link (.vtt)">
         <button class="btn-green" onclick="syncEverything()">Sync & Play for All</button>
     </div>
-    <video id="player" controls playsinline crossorigin="anonymous"></video>
+
+    <div class="vid-wrapper">
+        <video id="player" controls playsinline crossorigin="anonymous"></video>
+        <div id="sub-overlay"><span id="sub-text"></span></div>
+    </div>
 
     <script>
         const v = document.getElementById('player');
-        const status = document.getElementById('status');
-        let conn;
+        const st = document.getElementById('sub-text');
+        let conn, allSubs = [];
         const peer = new Peer();
 
         peer.on('open', id => {
             const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('join')) connectToPeer(urlParams.get('join'));
+            if (urlParams.get('join')) connect(urlParams.get('join'));
         });
 
         function shareInvite() {
@@ -44,67 +72,75 @@
             document.getElementById('invite-btn').innerText = "Link Copied!";
         }
 
-        peer.on('connection', newConn => { conn = newConn; setupEvents(); });
-        function connectToPeer(id) { conn = peer.connect(id); setupEvents(); }
+        peer.on('connection', c => { conn = c; setup(); });
+        function connect(id) { conn = peer.connect(id); setup(); }
 
-        function setupEvents() {
+        function setup() {
             conn.on('open', () => {
-                status.innerText = "STATUS: CONNECTED";
-                conn.on('data', data => {
-                    if (data.type === 'load') { loadVideo(data.url, data.sub); }
-                    else if (data.type === 'play') { v.currentTime = data.time; v.play().catch(() => {}); }
-                    else if (data.type === 'pause') { v.pause(); }
+                document.getElementById('status').innerText = "STATUS: CONNECTED";
+                conn.on('data', d => {
+                    if (d.type === 'load') { loadVideo(d.m, d.s); }
+                    else if (d.type === 'play') { v.currentTime = d.t; v.play().catch(()=>{}); }
+                    else if (d.type === 'pause') { v.pause(); }
                 });
             });
         }
 
-        async function applySubs(url) {
-            const oldTracks = v.querySelectorAll('track');
-            oldTracks.forEach(t => t.remove());
-
+        async function parseSubs(url) {
+            allSubs = [];
             if (!url) return;
             try {
-                const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-                const response = await fetch(proxyUrl);
-                const text = await response.text();
+                const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+                const res = await fetch(proxy);
+                const text = await res.text();
                 
-                // Tricking the browser by turning the text into a Data URI
-                const blob = new Blob([text], { type: 'text/vtt' });
-                const reader = new FileReader();
-                reader.readAsDataURL(blob);
-                reader.onloadend = function() {
-                    const t = document.createElement('track');
-                    t.src = reader.result;
-                    t.kind = "subtitles";
-                    t.srclang = "en";
-                    t.label = "English";
-                    t.default = true;
-                    v.appendChild(t);
-                    
-                    // Force the track to 'showing' mode
-                    setTimeout(() => {
-                        if (v.textTracks[0]) v.textTracks[0].mode = 'showing';
-                    }, 1000);
-                };
-            } catch (e) { console.log("Sub Error:", e); }
+                const blocks = text.split(/\n\s*\n/);
+                blocks.forEach(b => {
+                    const lines = b.split('\n');
+                    let time = null;
+                    let txt = [];
+                    lines.forEach(l => {
+                        if (l.includes('-->')) time = l.split(' --> ');
+                        else if (time && l.trim() !== "" && !l.startsWith('WEBVTT')) txt.push(l.trim());
+                    });
+                    if (time && txt.length > 0) {
+                        allSubs.push({ s: toSec(time[0]), e: toSec(time[1]), t: txt.join('<br>') });
+                    }
+                });
+            } catch (e) { console.error(e); }
         }
+
+        function toSec(t) {
+            const p = t.trim().replace(',', '.').split(':');
+            let s = 0;
+            if (p.length === 3) s = (+p[0]*3600) + (+p[1]*60) + (+p[2]);
+            else s = (+p[0]*60) + (+p[1]);
+            return s;
+        }
+
+        // The Magic: Update text manually based on video time
+        v.ontimeupdate = () => {
+            const now = v.currentTime;
+            const match = allSubs.find(s => now >= s.s && now <= s.e);
+            st.innerHTML = match ? match.t : "";
+            st.parentElement.style.display = match ? "block" : "none";
+        };
 
         function loadVideo(m, s) {
             v.pause();
             v.src = m;
-            applySubs(s);
+            parseSubs(s);
             v.load();
         }
 
         function syncEverything() {
             const m = document.getElementById('movie-url').value.trim();
             const s = document.getElementById('sub-url').value.trim();
-            if(!m) return alert("Paste movie link!");
             loadVideo(m, s);
-            if (conn && conn.open) conn.send({ type: 'load', url: m, sub: s });
+            if (conn && conn.open) conn.send({ type: 'load', m: m, s: s });
         }
 
-        v.onplay = () => { if(conn && conn.open) conn.send({ type: 'play', time: v.currentTime }); };
+        v.onplay = () => { if(conn && conn.open) conn.send({ type: 'play', t: v.currentTime }); };
         v.onpause = () => { if(conn && conn.open) conn.send({ type: 'pause' }); };
     </script>
 </body>
