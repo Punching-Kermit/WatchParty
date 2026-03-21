@@ -51,20 +51,17 @@
             if (!peer.id) return alert("Still loading ID...");
             const url = window.location.origin + window.location.pathname + "?join=" + peer.id;
             
-            // Try auto-copy
             navigator.clipboard.writeText(url).then(() => {
-                alert("Link Copied Automatically!");
+                alert("Link Copied! Send it to her.");
             }).catch(() => {
-                // If auto-copy fails, show the link manually
                 linkDisplay.style.display = "block";
                 rawLink.innerText = url;
-                alert("Auto-copy blocked. Please copy the link shown below.");
+                alert("Manual copy required. See link below.");
             });
         }
 
         function copyManual() {
-            const text = rawLink.innerText;
-            navigator.clipboard.writeText(text);
+            navigator.clipboard.writeText(rawLink.innerText);
             alert("Copied!");
         }
 
@@ -78,9 +75,25 @@
         function setupEvents() {
             conn.on('open', () => {
                 status.innerText = "CONNECTED TO PARTNER";
+                
+                // If you already have a movie loaded, tell her phone to load it too
+                const currentUrl = document.getElementById('movie-url').value.trim();
+                if (currentUrl) {
+                    conn.send({ type: 'load', url: currentUrl });
+                }
+
                 conn.on('data', data => {
-                    if (data.type === 'load') { v.src = data.url; v.load(); }
-                    else if (data.type === 'play') { v.currentTime = data.time; v.play().catch(()=>{}); }
+                    if (data.type === 'load') { 
+                        v.src = data.url; 
+                        v.load(); 
+                        status.innerText = "MOVIE LOADED: TAP PLAY";
+                    }
+                    else if (data.type === 'play') { 
+                        v.currentTime = data.time; 
+                        v.play().catch(() => {
+                            status.innerText = "TAP SCREEN TO START VIDEO";
+                        }); 
+                    }
                     else if (data.type === 'pause') { v.pause(); }
                 });
             });
