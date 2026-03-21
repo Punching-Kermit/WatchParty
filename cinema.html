@@ -9,28 +9,26 @@
         body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 15px; }
         .panel { background: #161616; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .invite-section { background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 20px; }
-        .invite-btn { background: #6c5ce7; color: #fff; border: none; padding: 14px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; margin-bottom: 5px; }
+        .invite-btn { background: #6c5ce7; color: #fff; border: none; padding: 14px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; }
         input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; font-size: 0.9rem; }
         button.main-action { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.3s; }
         .btn-green { background: #2ecc71; color: white; margin-top: 10px; }
         video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; }
         #status { color: #ffa502; font-size: 0.85rem; margin-top: 10px; font-weight: bold; }
-        ::cue { background: rgba(0,0,0,0.75); color: #fff; font-size: 1.1rem; }
+        ::cue { background: rgba(0,0,0,0.8); color: #fff; font-size: 1.1rem; }
     </style>
 </head>
 <body>
-
     <div class="panel">
         <div class="invite-section">
             <button class="invite-btn" id="invite-btn" onclick="shareInvite()">Copy Connection Link</button>
-            <div id="status">System Starting...</div>
+            <div id="status">Ready to Connect</div>
         </div>
         <hr style="border: 0.5px solid #333; margin: 25px 0;">
         <input type="text" id="movie-url" placeholder="Movie Link (MP4/MKV)">
         <input type="text" id="sub-url" placeholder="Subtitle Link (VTT)">
         <button class="main-action btn-green" onclick="syncEverything()">Sync & Play for All</button>
     </div>
-
     <video id="player" controls playsinline crossorigin="anonymous"></video>
 
     <script>
@@ -39,87 +37,55 @@
         const inviteBtn = document.getElementById('invite-btn');
         let conn;
 
-        // Use a standard PeerJS setup
         const peer = new Peer();
 
         peer.on('open', id => {
-            status.innerText = "Ready to Connect";
-            checkAutoJoin();
-        });
-
-        function checkAutoJoin() {
             const urlParams = new URLSearchParams(window.location.search);
-            const joinId = urlParams.get('join');
-            if (joinId) {
-                status.innerText = "Joining Host...";
-                connect(joinId);
-            }
-        }
+            if (urlParams.get('join')) connect(urlParams.get('join'));
+        });
 
         function shareInvite() {
             const inviteUrl = window.location.origin + window.location.pathname + "?join=" + peer.id;
-            navigator.clipboard.writeText(inviteUrl).then(() => {
-                inviteBtn.innerText = "Link Copied!";
-                setTimeout(() => { inviteBtn.innerText = "Copy Connection Link"; }, 3000);
-            });
+            navigator.clipboard.writeText(inviteUrl);
+            inviteBtn.innerText = "Link Copied!";
+            setTimeout(() => { inviteBtn.innerText = "Copy Connection Link"; }, 3000);
         }
 
-        // Listen for connections (Receiver side)
-        peer.on('connection', newConn => {
-            conn = newConn;
-            bindEvents();
-        });
+        peer.on('connection', newConn => { conn = newConn; setupEvents(); });
 
-        // Start a connection (Caller side)
-        function connect(id) {
-            conn = peer.connect(id);
-            bindEvents();
-        }
+        function connect(id) { conn = peer.connect(id); setupEvents(); }
 
-        function bindEvents() {
+        function setupEvents() {
             conn.on('open', () => {
                 status.innerText = "STATUS: CONNECTED";
                 conn.on('data', data => {
-                    if (data.type === 'load') {
-                        v.src = data.url;
-                        applySubs(data.sub);
-                        v.load();
-                    } else if (data.type === 'play') {
-                        v.currentTime = data.time;
-                        v.play().catch(() => {});
-                    } else if (data.type === 'pause') {
-                        v.pause();
-                    }
+                    if (data.type === 'load') { loadVideo(data.url, data.sub); }
+                    else if (data.type === 'play') { v.currentTime = data.time; v.play().catch(() => {}); }
+                    else if (data.type === 'pause') { v.pause(); }
                 });
             });
-            conn.on('close', () => { status.innerText = "Connection Lost. Refreshing..."; });
         }
 
-        function applySubs(url) {
+        function loadVideo(m, s) {
+            v.pause();
+            v.src = m;
             const tracks = v.querySelectorAll('track');
             tracks.forEach(t => t.remove());
-            if(!url) return;
-            const t = document.createElement('track');
-            t.src = url;
-            t.kind = "subtitles";
-            t.srclang = "en";
-            t.label = "English";
-            t.default = true;
-            v.appendChild(t);
+            if(s) {
+                const t = document.createElement('track');
+                t.src = s; t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
+                v.appendChild(t);
+                // Force show for mobile
+                setTimeout(() => { if(v.textTracks[0]) v.textTracks[0].mode = 'showing'; }, 500);
+            }
+            v.load();
         }
 
         function syncEverything() {
             const m = document.getElementById('movie-url').value.trim();
             const s = document.getElementById('sub-url').value.trim();
-            if(!m) return alert("Paste link first!");
-
-            v.src = m;
-            applySubs(s);
-            v.load();
-
-            if(conn && conn.open) {
-                conn.send({ type: 'load', url: m, sub: s });
-            }
+            loadVideo(m, s);
+            if(conn && conn.open) conn.send({ type: 'load', url: m, sub: s });
         }
 
         v.onplay = () => { if(conn && conn.open) conn.send({ type: 'play', time: v.currentTime }); };
