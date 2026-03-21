@@ -9,18 +9,18 @@
         body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 15px; }
         .panel { background: #161616; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; }
-        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; font-size: 1rem; }
         .btn-purple { background: #6c5ce7; color: white; }
         .btn-green { background: #2ecc71; color: white; }
         video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; }
-        #status { color: #ffa502; font-size: 0.85rem; margin: 10px 0; font-weight: bold; }
+        #status { color: #ffa502; font-size: 0.85rem; margin: 10px 0; font-weight: bold; text-transform: uppercase; }
         ::cue { background: rgba(0,0,0,0.8); color: #fff; font-size: 1.1rem; }
     </style>
 </head>
 <body>
     <div class="panel">
         <button class="btn-purple" onclick="shareInvite()" id="invite-btn">Copy Connection Link</button>
-        <div id="status">Ready to Connect</div>
+        <div id="status">Waking up system...</div>
         <input type="text" id="movie-url" placeholder="Movie Link">
         <input type="text" id="sub-url" placeholder="Subtitle Link (.vtt)">
         <button class="btn-green" onclick="syncEverything()">Sync & Play for All</button>
@@ -31,11 +31,18 @@
         const v = document.getElementById('player');
         const status = document.getElementById('status');
         let conn;
+        
+        // Randomize ID slightly to prevent server collisions
         const peer = new Peer();
 
         peer.on('open', id => {
+            status.innerText = "Ready to Connect";
             const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('join')) connect(urlParams.get('join'));
+            const joinId = urlParams.get('join');
+            if (joinId) {
+                status.innerText = "Connecting to Host...";
+                connectToPeer(joinId);
+            }
         });
 
         function shareInvite() {
@@ -44,50 +51,55 @@
             document.getElementById('invite-btn').innerText = "Link Copied!";
         }
 
-        peer.on('connection', newConn => { conn = newConn; setupEvents(); });
-        function connect(id) { conn = peer.connect(id); setupEvents(); }
+        peer.on('connection', newConn => {
+            conn = newConn;
+            handleData();
+        });
 
-        function setupEvents() {
+        function connectToPeer(id) {
+            conn = peer.connect(id);
+            handleData();
+        }
+
+        function handleData() {
             conn.on('open', () => {
                 status.innerText = "STATUS: CONNECTED";
                 conn.on('data', data => {
-                    if (data.type === 'load') { loadVideo(data.url, data.sub); }
-                    else if (data.type === 'play') { v.currentTime = data.time; v.play().catch(() => {}); }
-                    else if (data.type === 'pause') { v.pause(); }
+                    if (data.type === 'load') {
+                        v.src = data.url;
+                        applySubs(data.sub);
+                        v.load();
+                    } else if (data.type === 'play') {
+                        v.currentTime = data.time;
+                        v.play().catch(() => {});
+                    } else if (data.type === 'pause') {
+                        v.pause();
+                    }
                 });
             });
+            conn.on('error', () => { status.innerText = "Connection Error. Refresh."; });
         }
 
-        function loadVideo(m, s) {
-            v.pause();
-            v.src = m;
-            // Remove old tracks
+        function applySubs(s) {
             while (v.firstChild) v.removeChild(v.firstChild);
-            
-            if(s) {
-                const t = document.createElement('track');
-                t.src = s;
-                t.kind = "subtitles";
-                t.srclang = "en";
-                t.label = "English";
-                t.default = true;
-                v.appendChild(t);
-                
-                // CRITICAL: This forces the subtitle track to "Showing" mode
-                v.addEventListener('loadedmetadata', () => {
-                    for (let i = 0; i < v.textTracks.length; i++) {
-                        v.textTracks[i].mode = 'showing';
-                    }
-                }, { once: true });
-            }
-            v.load();
+            if (!s) return;
+            const t = document.createElement('track');
+            t.src = s; t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
+            v.appendChild(t);
+            // Force activate
+            v.textTracks[0].mode = 'showing';
         }
 
         function syncEverything() {
             const m = document.getElementById('movie-url').value.trim();
             const s = document.getElementById('sub-url').value.trim();
-            loadVideo(m, s);
-            if(conn && conn.open) conn.send({ type: 'load', url: m, sub: s });
+            if(!m) return alert("Paste movie link!");
+            v.src = m;
+            applySubs(s);
+            v.load();
+            if (conn && conn.open) {
+                conn.send({ type: 'load', url: m, sub: s });
+            }
         }
 
         v.onplay = () => { if(conn && conn.open) conn.send({ type: 'play', time: v.currentTime }); };
