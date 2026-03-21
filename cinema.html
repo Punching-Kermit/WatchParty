@@ -6,90 +6,39 @@
     <title>Cinema Sync Pro</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 10px; }
-        .panel { background: #161616; padding: 15px; border-radius: 12px; border: 1px solid #333; margin-bottom: 15px; }
-        input, button { width: 100%; padding: 12px; border-radius: 8px; border: none; font-weight: bold; margin-bottom: 8px; box-sizing: border-box; }
-        input { background: #222; color: #fff; border: 1px solid #444; }
-        .btn-purple { background: #6c5ce7; color: white; }
+        body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 15px; }
+        .panel { background: #1b1b1b; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; }
+        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-purple { background: #6c5ce7; color: white; margin-bottom: 10px; }
         .btn-green { background: #2ecc71; color: white; }
-        .btn-orange { background: #e67e22; color: white; }
-        video { width: 100%; background: #000; border-radius: 10px; }
-        #status { color: #ffa502; font-size: 0.8rem; margin-bottom: 10px; }
-        label { display: block; margin-bottom: 5px; font-size: 0.8rem; color: #aaa; }
+        video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; box-shadow: 0 4px 20px #000; }
+        #status { color: #2ecc71; font-size: 0.85rem; margin: 10px 0; font-weight: bold; }
+        ::cue { background: rgba(0,0,0,0.8); color: #fff; font-size: 1.1rem; }
     </style>
 </head>
 <body>
     <div class="panel">
-        <div id="status">ID: Initializing...</div>
-        <button class="btn-purple" onclick="shareInvite()">Copy Connection Link</button>
-        <input type="text" id="join-id" placeholder="Partner's ID (If link fails)">
-        <button onclick="connectToPeer(document.getElementById('join-id').value)">Manual Connect</button>
-        
-        <hr style="border: 0.5px solid #333; margin: 15px 0;">
-        
-        <input type="text" id="movie-url" placeholder="Movie Link">
-        <label>Optional: Upload .vtt file if links fail</label>
-        <input type="file" id="sub-file" accept=".vtt">
-        <button class="btn-green" onclick="syncEverything()">Sync & Play</button>
+        <button class="btn-purple" onclick="shareInvite()" id="invite-btn">SHARE CONNECTION LINK</button>
+        <div id="status">Connecting to System...</div>
+        <input type="text" id="movie-url" placeholder="Paste Movie Link Here">
+        <input type="text" id="sub-url" placeholder="Paste Subtitle Link Here">
+        <button class="btn-green" onclick="syncEverything()">SYNC & PLAY</button>
     </div>
-
     <video id="player" controls playsinline crossorigin="anonymous"></video>
 
     <script>
         const v = document.getElementById('player');
         const status = document.getElementById('status');
         let conn;
-        const peer = new Peer();
+        // Using high-speed Google servers for the connection
+        const peer = new Peer({ config: {'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]}});
 
         peer.on('open', id => {
-            status.innerText = "YOUR ID: " + id;
+            status.innerText = "SYSTEM READY";
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.get('join')) connectToPeer(urlParams.get('join'));
         });
 
         function shareInvite() {
             const url = window.location.origin + window.location.pathname + "?join=" + peer.id;
-            navigator.clipboard.writeText(url);
-            alert("Link Copied! Send to her.");
-        }
-
-        peer.on('connection', c => { conn = c; setup(); });
-        function connectToPeer(id) { conn = peer.connect(id); setup(); }
-
-        function setup() {
-            conn.on('open', () => {
-                status.innerText = "CONNECTED TO PARTNER";
-                conn.on('data', d => {
-                    if (d.type === 'load') { v.src = d.m; v.load(); }
-                    else if (d.type === 'play') { v.currentTime = d.t; v.play(); }
-                    else if (d.type === 'pause') { v.pause(); }
-                });
-            });
-        }
-
-        // Subtitle File Logic
-        document.getElementById('sub-file').onchange = function(e) {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const t = document.createElement('track');
-                t.src = event.target.result;
-                t.kind = "subtitles"; t.srclang = "en"; t.label = "English"; t.default = true;
-                while (v.firstChild) v.removeChild(v.firstChild);
-                v.appendChild(t);
-                v.textTracks[0].mode = 'showing';
-            };
-            reader.readAsDataURL(file);
-        };
-
-        function syncEverything() {
-            const m = document.getElementById('movie-url').value;
-            v.src = m; v.load();
-            if (conn && conn.open) conn.send({ type: 'load', m: m });
-        }
-
-        v.onplay = () => { if(conn && conn.open) conn.send({ type: 'play', t: v.currentTime }); };
-        v.onpause = () => { if(conn && conn.open) conn.send({ type: 'pause' }); };
-    </script>
-</body>
-</html>
