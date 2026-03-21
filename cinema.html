@@ -12,6 +12,7 @@
         button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; }
         .btn-purple { background: #6c5ce7; color: white; }
         .btn-green { background: #2ecc71; color: white; }
+        #link-display { display: none; background: #333; padding: 10px; border-radius: 8px; margin-top: 10px; word-break: break-all; font-size: 0.8rem; border: 1px dashed #666; }
         video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; }
         #status { color: #ffa502; font-size: 0.85rem; margin: 10px 0; font-weight: bold; }
     </style>
@@ -19,7 +20,11 @@
 <body>
     <div class="panel">
         <button class="btn-purple" onclick="shareInvite()" id="invite-btn">1. GET CONNECTION LINK</button>
-        <div id="status">Initializing System...</div>
+        <div id="link-display" onclick="copyManual()">Tap to copy: <span id="raw-link"></span></div>
+        <div id="status">Initializing...</div>
+        
+        <hr style="border:0; border-top:1px solid #333; margin:15px 0;">
+        
         <input type="text" id="movie-url" placeholder="Paste Movie Link Here">
         <button class="btn-green" onclick="syncEverything()">2. SYNC & PLAY</button>
     </div>
@@ -28,34 +33,44 @@
     <script>
         const v = document.getElementById('player');
         const status = document.getElementById('status');
-        const inviteBtn = document.getElementById('invite-btn');
+        const linkDisplay = document.getElementById('link-display');
+        const rawLink = document.getElementById('raw-link');
         let conn;
 
-        // Using Google's STUN servers to pierce through mobile data/firewalls
         const peer = new Peer({
             config: {'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]}
         });
 
         peer.on('open', id => {
-            status.innerText = "READY: TAP THE PURPLE BUTTON";
+            status.innerText = "SYSTEM READY";
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.get('join')) connectToPartner(urlParams.get('join'));
         });
 
         function shareInvite() {
-            if (!peer.id) return alert("System still loading, wait 2 seconds.");
+            if (!peer.id) return alert("Still loading ID...");
             const url = window.location.origin + window.location.pathname + "?join=" + peer.id;
-            navigator.clipboard.writeText(url);
-            inviteBtn.innerText = "LINK COPIED! SEND TO HER";
+            
+            // Try auto-copy
+            navigator.clipboard.writeText(url).then(() => {
+                alert("Link Copied Automatically!");
+            }).catch(() => {
+                // If auto-copy fails, show the link manually
+                linkDisplay.style.display = "block";
+                rawLink.innerText = url;
+                alert("Auto-copy blocked. Please copy the link shown below.");
+            });
         }
 
-        peer.on('connection', newConn => {
-            conn = newConn;
-            setupEvents();
-        });
+        function copyManual() {
+            const text = rawLink.innerText;
+            navigator.clipboard.writeText(text);
+            alert("Copied!");
+        }
 
+        peer.on('connection', newConn => { conn = newConn; setupEvents(); });
         function connectToPartner(id) {
-            status.innerText = "CONNECTING TO PARTNER...";
+            status.innerText = "CONNECTING...";
             conn = peer.connect(id);
             setupEvents();
         }
@@ -65,11 +80,10 @@
                 status.innerText = "CONNECTED TO PARTNER";
                 conn.on('data', data => {
                     if (data.type === 'load') { v.src = data.url; v.load(); }
-                    else if (data.type === 'play') { v.currentTime = data.time; v.play().catch(() => {}); }
+                    else if (data.type === 'play') { v.currentTime = data.time; v.play().catch(()=>{}); }
                     else if (data.type === 'pause') { v.pause(); }
                 });
             });
-            conn.on('error', () => { status.innerText = "CONNECTION FAILED. RETRY."; });
         }
 
         function syncEverything() {
