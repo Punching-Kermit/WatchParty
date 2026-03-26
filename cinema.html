@@ -6,93 +6,75 @@
     <title>Cinema Sync Pro</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 15px; }
-        .panel { background: #161616; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 20px; }
+        body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 10px; }
+        .panel { background: #161616; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 15px; }
         input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; }
-        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; }
-        .btn-purple { background: #6c5ce7; color: white; }
-        .btn-green { background: #2ecc71; color: white; }
-        #link-display { display: none; background: #333; padding: 10px; border-radius: 8px; margin-top: 10px; word-break: break-all; font-size: 0.8rem; border: 1px dashed #666; }
+        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-green { background: #2ecc71; color: white; width: 100%; }
         video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; }
         #status { color: #ffa502; font-size: 0.85rem; margin: 10px 0; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="panel">
-        <button class="btn-purple" onclick="shareInvite()" id="invite-btn">1. GET CONNECTION LINK</button>
-        <div id="link-display" onclick="copyManual()">Tap to copy: <span id="raw-link"></span></div>
-        <div id="status">Initializing...</div>
-        
-        <hr style="border:0; border-top:1px solid #333; margin:15px 0;">
-        
+        <div id="status">Searching for Partner...</div>
         <input type="text" id="movie-url" placeholder="Paste Movie Link Here">
-        <button class="btn-green" onclick="syncEverything()">2. SYNC & PLAY</button>
+        <button class="btn-green" onclick="syncEverything()">SYNC & PLAY</button>
     </div>
-    <video id="player" controls playsinline crossorigin="anonymous"></video>
+    <video id="player" controls playsinline crossorigin="anonymous" webkit-playsinline></video>
 
     <script>
         const v = document.getElementById('player');
         const status = document.getElementById('status');
-        const linkDisplay = document.getElementById('link-display');
-        const rawLink = document.getElementById('raw-link');
-        let conn;
+        const ROOM_ID = "mta-private-room-2026"; // The secret "handshake" ID
+        let peer, conn;
 
-        const peer = new Peer({
-            config: {'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]}
-        });
+        // Start connection automatically
+        function init() {
+            // Random ID for ourselves, then try to find the fixed Room ID
+            peer = new Peer({
+                config: {'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]}
+            });
 
-        peer.on('open', id => {
-            status.innerText = "SYSTEM READY";
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('join')) connectToPartner(urlParams.get('join'));
-        });
+            peer.on('open', (myID) => {
+                status.innerText = "Connecting...";
+                // Attempt to connect to the fixed room ID
+                const connection = peer.connect(ROOM_ID);
+                setupEvents(connection);
+            });
 
-        function shareInvite() {
-            if (!peer.id) return alert("Still loading ID...");
-            const url = window.location.origin + window.location.pathname + "?join=" + peer.id;
-            
-            navigator.clipboard.writeText(url).then(() => {
-                alert("Link Copied! Send it to her.");
-            }).catch(() => {
-                linkDisplay.style.display = "block";
-                rawLink.innerText = url;
-                alert("Manual copy required. See link below.");
+            // If we are the first one there, we become the Room ID host
+            const hostPeer = new Peer(ROOM_ID, {
+                config: {'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]}
+            });
+
+            hostPeer.on('connection', (newConn) => {
+                setupEvents(newConn);
+            });
+
+            hostPeer.on('error', (err) => {
+                if(err.type === 'unavailable-id') {
+                    // Host already exists, which is fine!
+                }
             });
         }
 
-        function copyManual() {
-            navigator.clipboard.writeText(rawLink.innerText);
-            alert("Copied!");
-        }
-
-        peer.on('connection', newConn => { conn = newConn; setupEvents(); });
-        function connectToPartner(id) {
-            status.innerText = "CONNECTING...";
-            conn = peer.connect(id);
-            setupEvents();
-        }
-
-        function setupEvents() {
+        function setupEvents(newConn) {
+            conn = newConn;
             conn.on('open', () => {
                 status.innerText = "CONNECTED TO PARTNER";
+                status.style.color = "#2ecc71";
                 
-                // If you already have a movie loaded, tell her phone to load it too
-                const currentUrl = document.getElementById('movie-url').value.trim();
-                if (currentUrl) {
-                    conn.send({ type: 'load', url: currentUrl });
-                }
-
                 conn.on('data', data => {
                     if (data.type === 'load') { 
                         v.src = data.url; 
                         v.load(); 
-                        status.innerText = "MOVIE LOADED: TAP PLAY";
                     }
                     else if (data.type === 'play') { 
                         v.currentTime = data.time; 
                         v.play().catch(() => {
-                            status.innerText = "TAP SCREEN TO START VIDEO";
-                        }); 
+                            status.innerText = "TAP VIDEO TO SYNC AUDIO/PLAY";
+                        });
                     }
                     else if (data.type === 'pause') { v.pause(); }
                 });
@@ -101,7 +83,7 @@
 
         function syncEverything() {
             const m = document.getElementById('movie-url').value.trim();
-            if(!m) return alert("Paste movie link!");
+            if(!m) return alert("Paste link first!");
             v.src = m;
             v.load();
             if (conn && conn.open) conn.send({ type: 'load', url: m });
@@ -109,6 +91,8 @@
 
         v.onplay = () => { if(conn && conn.open) conn.send({ type: 'play', time: v.currentTime }); };
         v.onpause = () => { if(conn && conn.open) conn.send({ type: 'pause' }); };
+
+        init(); // Start the auto-connect
     </script>
 </body>
 </html>
