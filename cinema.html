@@ -6,57 +6,42 @@
     <title>Cinema Sync Pro</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 10px; }
-        .panel { background: #161616; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 15px; }
-        input { width: 100%; padding: 14px; box-sizing: border-box; border-radius: 10px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; }
-        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        .btn-green { background: #2ecc71; color: white; width: 100%; }
+        body { font-family: sans-serif; background: #0a0a0a; color: #fff; text-align: center; margin: 0; padding: 15px; }
+        .panel { background: #161616; padding: 15px; border-radius: 15px; border: 1px solid #333; margin-bottom: 15px; }
+        input { width: 100%; padding: 12px; box-sizing: border-box; border-radius: 8px; border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px; }
+        button { width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; margin-top: 5px; }
+        .btn-green { background: #2ecc71; color: white; }
+        .btn-orange { background: #e67e22; color: white; display: none; }
         video { width: 100%; border-radius: 12px; background: #000; margin-top: 15px; border: 1px solid #333; }
-        #status { color: #ffa502; font-size: 0.85rem; margin: 10px 0; font-weight: bold; }
+        #status { color: #ffa502; font-size: 0.85rem; margin-bottom: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="panel">
-        <div id="status">Searching for Partner...</div>
+        <div id="status">Connecting...</div>
         <input type="text" id="movie-url" placeholder="Paste Movie Link Here">
         <button class="btn-green" onclick="syncEverything()">SYNC & PLAY</button>
+        <button id="force-btn" class="btn-orange" onclick="v.play()">TAP TO UNLOCK VIDEO</button>
     </div>
-    <video id="player" controls playsinline crossorigin="anonymous" webkit-playsinline></video>
+    <video id="player" controls playsinline crossorigin="anonymous"></video>
 
     <script>
         const v = document.getElementById('player');
         const status = document.getElementById('status');
-        const ROOM_ID = "mta-private-room-2026"; // The secret "handshake" ID
+        const forceBtn = document.getElementById('force-btn');
+        const ROOM_ID = "mta-private-room-2026";
         let peer, conn;
 
-        // Start connection automatically
         function init() {
-            // Random ID for ourselves, then try to find the fixed Room ID
-            peer = new Peer({
-                config: {'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]}
-            });
+            peer = new Peer({ config: {'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]}});
 
-            peer.on('open', (myID) => {
-                status.innerText = "Connecting...";
-                // Attempt to connect to the fixed room ID
+            peer.on('open', () => {
                 const connection = peer.connect(ROOM_ID);
                 setupEvents(connection);
             });
 
-            // If we are the first one there, we become the Room ID host
-            const hostPeer = new Peer(ROOM_ID, {
-                config: {'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]}
-            });
-
-            hostPeer.on('connection', (newConn) => {
-                setupEvents(newConn);
-            });
-
-            hostPeer.on('error', (err) => {
-                if(err.type === 'unavailable-id') {
-                    // Host already exists, which is fine!
-                }
-            });
+            const hostPeer = new Peer(ROOM_ID, { config: {'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]}});
+            hostPeer.on('connection', (newConn) => { setupEvents(newConn); });
         }
 
         function setupEvents(newConn) {
@@ -64,6 +49,7 @@
             conn.on('open', () => {
                 status.innerText = "CONNECTED TO PARTNER";
                 status.style.color = "#2ecc71";
+                forceBtn.style.display = "block"; // Show unlock button for her
                 
                 conn.on('data', data => {
                     if (data.type === 'load') { 
@@ -72,9 +58,7 @@
                     }
                     else if (data.type === 'play') { 
                         v.currentTime = data.time; 
-                        v.play().catch(() => {
-                            status.innerText = "TAP VIDEO TO SYNC AUDIO/PLAY";
-                        });
+                        v.play().catch(() => { status.innerText = "TAP 'UNLOCK VIDEO' BUTTON"; });
                     }
                     else if (data.type === 'pause') { v.pause(); }
                 });
@@ -84,15 +68,14 @@
         function syncEverything() {
             const m = document.getElementById('movie-url').value.trim();
             if(!m) return alert("Paste link first!");
-            v.src = m;
-            v.load();
+            v.src = m; v.load();
             if (conn && conn.open) conn.send({ type: 'load', url: m });
         }
 
         v.onplay = () => { if(conn && conn.open) conn.send({ type: 'play', time: v.currentTime }); };
         v.onpause = () => { if(conn && conn.open) conn.send({ type: 'pause' }); };
 
-        init(); // Start the auto-connect
+        init();
     </script>
 </body>
 </html>
